@@ -41,9 +41,10 @@ func init() {
 			</div>
 			<div class="gf-form">
         <span class="gf-form-label width-10">Message Template</span>
-				<select class="gf-form-select max-width-14" ng-model="ctrl.model.settings.message_template">
-					<option selected="selected" value="default">Default</option>
-					<option value="247ops">247 Ops</option>
+				<select required class="gf-form-input max-width-14" ng-model="ctrl.model.settings.message_template" ng-options="v as k for (k, v) in {
+          'Default': 'default',
+          '24/7 Ops': '247ops',
+        }" ng-init="ctrl.model.settings.message_template=ctrl.model.settings.message_template||'default'">
 				</select>
       </div>
     `,
@@ -62,23 +63,23 @@ func NewAwsSnsNotifier(model *m.AlertNotification) (alerting.Notifier, error) {
 	}
 
 	return &AwsSnsNotifier{
-		NotifierBase: 	 NewNotifierBase(model),
-		Region:       	 region,
-		TopicArn:     	 topicArn,
-		AccessKey:    	 model.Settings.Get("access_key").MustString(),
-		SecretKey:    	 model.Settings.Get("secret_key").MustString(),
+		NotifierBase:    NewNotifierBase(model),
+		Region:          region,
+		TopicArn:        topicArn,
+		AccessKey:       model.Settings.Get("access_key").MustString(),
+		SecretKey:       model.Settings.Get("secret_key").MustString(),
 		MessageTemplate: model.Settings.Get("message_template").MustString(),
-		log:          	 log.New("alerting.notifier.aws_sns")
+		log:             log.New("alerting.notifier.aws_sns"),
 	}, nil
 }
 
 type AwsSnsNotifier struct {
 	NotifierBase
-	MessageTemplate string
 	Region          string
 	TopicArn        string
 	AccessKey       string
 	SecretKey       string
+	MessageTemplate string
 	log             log.Logger
 }
 
@@ -86,25 +87,50 @@ func (this *AwsSnsNotifier) Notify(evalContext *alerting.EvalContext) error {
 	this.log.Info("Sending AWS SNS message")
 
 	bodyJSON := simplejson.New()
-	bodyJSON.Set("title", evalContext.GetNotificationTitle())
-	bodyJSON.Set("ruleId", evalContext.Rule.Id)
-	bodyJSON.Set("ruleName", evalContext.Rule.Name)
-	bodyJSON.Set("state", evalContext.Rule.State)
-	bodyJSON.Set("evalMatches", simplejson.NewFromAny(evalContext.EvalMatches))
 
-	ruleUrl, err := evalContext.GetRuleUrl()
-	if err == nil {
-		bodyJSON.Set("ruleUrl", ruleUrl)
-	}
+	if this.MessageTemplate == "247ops" {
+		bodyJSON.Set("AlarmName", evalContext.GetNotificationTitle())
+		bodyJSON.Set("AlarmDescription", "severity=debug,runbookurl=https://confluence.dev.bbc.co.uk/display/IBL/iPlayer+Business+Layer+Runbook")
+		bodyJSON.Set("StateChangeTime", evalContext.StartTime)
+		bodyJSON.Set("ruleId", evalContext.Rule.Id)
+		bodyJSON.Set("ruleName", evalContext.Rule.Name)
+		bodyJSON.Set("state", evalContext.Rule.State)
+		bodyJSON.Set("evalMatches", simplejson.NewFromAny(evalContext.EvalMatches))
 
-	if evalContext.ImagePublicUrl != "" {
-		bodyJSON.Set("imageUrl", evalContext.ImagePublicUrl)
-	}
+		ruleUrl, err := evalContext.GetRuleUrl()
+		if err == nil {
+			bodyJSON.Set("ruleUrl", ruleUrl)
+		}
 
-	if evalContext.Rule.Message != "" {
-		bodyJSON.Set("message", evalContext.Rule.Message)
+		if evalContext.ImagePublicUrl != "" {
+			bodyJSON.Set("imageUrl", evalContext.ImagePublicUrl)
+		}
+
+		if evalContext.Rule.Message != "" {
+			bodyJSON.Set("message", evalContext.Rule.Message)
+		}
+		bodyJSON.Set("default", "")
+	} else {
+		bodyJSON.Set("title", evalContext.GetNotificationTitle())
+		bodyJSON.Set("ruleId", evalContext.Rule.Id)
+		bodyJSON.Set("ruleName", evalContext.Rule.Name)
+		bodyJSON.Set("state", evalContext.Rule.State)
+		bodyJSON.Set("evalMatches", simplejson.NewFromAny(evalContext.EvalMatches))
+
+		ruleUrl, err := evalContext.GetRuleUrl()
+		if err == nil {
+			bodyJSON.Set("ruleUrl", ruleUrl)
+		}
+
+		if evalContext.ImagePublicUrl != "" {
+			bodyJSON.Set("imageUrl", evalContext.ImagePublicUrl)
+		}
+
+		if evalContext.Rule.Message != "" {
+			bodyJSON.Set("message", evalContext.Rule.Message)
+		}
+		bodyJSON.Set("default", "")
 	}
-	bodyJSON.Set("default", "")
 
 	body, _ := bodyJSON.MarshalJSON()
 
