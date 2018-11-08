@@ -38,6 +38,13 @@ func init() {
       <div class="gf-form">
         <span class="gf-form-label width-10">Secret Key</span>
         <input type="text" class="gf-form-input max-width-14" ng-model="ctrl.model.settings.secret_key"></input>
+			</div>
+			<div class="gf-form">
+        <span class="gf-form-label width-10">Message Template</span>
+				<select class="gf-form-select max-width-14" ng-model="ctrl.model.settings.message_template">
+					<option selected="selected" value="default">Default</option>
+					<option value="247ops">247 Ops</option>
+				</select>
       </div>
     `,
 	})
@@ -55,22 +62,24 @@ func NewAwsSnsNotifier(model *m.AlertNotification) (alerting.Notifier, error) {
 	}
 
 	return &AwsSnsNotifier{
-		NotifierBase: NewNotifierBase(model),
-		Region:       region,
-		TopicArn:     topicArn,
-		AccessKey:    model.Settings.Get("access_key").MustString(),
-		SecretKey:    model.Settings.Get("secret_key").MustString(),
-		log:          log.New("alerting.notifier.aws_sns"),
+		NotifierBase: 	 NewNotifierBase(model),
+		Region:       	 region,
+		TopicArn:     	 topicArn,
+		AccessKey:    	 model.Settings.Get("access_key").MustString(),
+		SecretKey:    	 model.Settings.Get("secret_key").MustString(),
+		MessageTemplate: model.Settings.Get("message_template").MustString(),
+		log:          	 log.New("alerting.notifier.aws_sns")
 	}, nil
 }
 
 type AwsSnsNotifier struct {
 	NotifierBase
-	Region    string
-	TopicArn  string
-	AccessKey string
-	SecretKey string
-	log       log.Logger
+	MessageTemplate string
+	Region          string
+	TopicArn        string
+	AccessKey       string
+	SecretKey       string
+	log             log.Logger
 }
 
 func (this *AwsSnsNotifier) Notify(evalContext *alerting.EvalContext) error {
