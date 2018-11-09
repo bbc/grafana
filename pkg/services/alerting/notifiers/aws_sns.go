@@ -109,11 +109,12 @@ func getMessageBody(messageTemplate string, runbookUrl string, evalContext *aler
 	switch messageTemplate {
 	case "plaintext":
 		alarm := fmt.Sprintf(
-			"Grafana Alert: %s\nTime: %s\nState: %s\nMessage: %s\nImage: %s",
+			"Grafana Alert: %s\nTime: %s\nState: %s\nMessage: %s\nAlert URL: %s\nImage: %s",
 			evalContext.GetNotificationTitle(),
 			evalContext.StartTime,
 			evalContext.Rule.State,
 			evalContext.Rule.Message,
+			evalContext.GetRuleUrl(),
 			evalContext.ImagePublicUrl,
 		)
 		return []byte(alarm), nil
