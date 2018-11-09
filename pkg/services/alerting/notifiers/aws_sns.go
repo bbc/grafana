@@ -105,7 +105,7 @@ func getMessageBody(messageTemplate string, runbookUrl string, evalContext *aler
 	bodyJSON := simplejson.New()
 
 	alarmDescription := fmt.Sprintf("severity=%s,runbookurl=%s", "debug", runbookUrl)
-
+	ruleUrl, ruleUrlErr := evalContext.GetRuleUrl()
 	switch messageTemplate {
 	case "plaintext":
 		alarm := fmt.Sprintf(
@@ -114,7 +114,7 @@ func getMessageBody(messageTemplate string, runbookUrl string, evalContext *aler
 			evalContext.StartTime,
 			evalContext.Rule.State,
 			evalContext.Rule.Message,
-			evalContext.GetRuleUrl(),
+			ruleUrl,
 			evalContext.ImagePublicUrl,
 		)
 		return []byte(alarm), nil
@@ -123,8 +123,7 @@ func getMessageBody(messageTemplate string, runbookUrl string, evalContext *aler
 		bodyJSON.Set("AlarmDescription", alarmDescription)
 		bodyJSON.Set("StateChangeTime", evalContext.StartTime)
 		bodyJSON.Set("state", evalContext.Rule.State)
-		ruleUrl, err := evalContext.GetRuleUrl()
-		if err == nil {
+		if ruleUrlErr == nil {
 			bodyJSON.Set("ruleUrl", ruleUrl)
 		}
 		if evalContext.Rule.Message != "" {
