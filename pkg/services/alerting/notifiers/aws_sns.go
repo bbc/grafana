@@ -1,6 +1,7 @@
 package notifiers
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -25,7 +26,7 @@ func init() {
       <h3 class="page-heading">AWS SNS settings</h3>
       <div class="gf-form">
         <span class="gf-form-label width-10">Region</span>
-        <input type="text" required class="gf-form-input max-width-14" ng-model="ctrl.model.settings.region" ng-init="ctrl.model.settings.region = 'eu-west-1'" placeholder="eu-west-1"></input>
+        <input type="text" required class="gf-form-input max-width-26" ng-model="ctrl.model.settings.region" ng-init="ctrl.model.settings.region = 'eu-west-1'" placeholder="eu-west-1"></input>
       </div>
       <div class="gf-form">
         <span class="gf-form-label width-10">Topic Arn</span>
@@ -33,20 +34,24 @@ func init() {
       </div>
       <div class="gf-form">
         <span class="gf-form-label width-10">Access Key</span>
-        <input type="text" class="gf-form-input max-width-14" ng-model="ctrl.model.settings.access_key"></input>
+        <input type="text" class="gf-form-input max-width-26" ng-model="ctrl.model.settings.access_key"></input>
       </div>
       <div class="gf-form">
         <span class="gf-form-label width-10">Secret Key</span>
-        <input type="text" class="gf-form-input max-width-14" ng-model="ctrl.model.settings.secret_key"></input>
+        <input type="text" class="gf-form-input max-width-26" ng-model="ctrl.model.settings.secret_key"></input>
 			</div>
 			<div class="gf-form">
         <span class="gf-form-label width-10">Message Template</span>
-				<select required class="gf-form-input max-width-14" ng-model="ctrl.model.settings.message_template" ng-options="v as k for (k, v) in {
+				<select required class="gf-form-input max-width-26" ng-model="ctrl.model.settings.message_template" ng-options="v as k for (k, v) in {
           'Default': 'default',
           '24/7 Ops': '247ops',
         }" ng-init="ctrl.model.settings.message_template=ctrl.model.settings.message_template||'default'">
 				</select>
       </div>
+      <div class="gf-form" ng-show="ctrl.model.settings.message_template == '247ops'">
+        <span class="gf-form-label width-10">Runbook URL</span>
+        <input type="text" ng-required="ctrl.model.settings.message_template == '247ops'" class="gf-form-input max-width-26" ng-model="ctrl.model.settings.runbook_url"></input>
+			</div>
     `,
 	})
 }
@@ -62,13 +67,24 @@ func NewAwsSnsNotifier(model *m.AlertNotification) (alerting.Notifier, error) {
 		return nil, alerting.ValidationError{Reason: "Could not find topic arn property in settings"}
 	}
 
+	messageTemplate := model.Settings.Get("message_template").MustString()
+	if messageTemplate == "" {
+		return nil, alerting.ValidationError{Reason: "Could not find Message Templase property in settings"}
+	}
+
+	runbookUrl := model.Settings.Get("runbook_url").MustString()
+	if messageTemplate == "ops247" && runbookUrl == "" {
+		return nil, alerting.ValidationError{Reason: "Runbook is required for Ops"}
+	}
+
 	return &AwsSnsNotifier{
 		NotifierBase:    NewNotifierBase(model),
 		Region:          region,
 		TopicArn:        topicArn,
 		AccessKey:       model.Settings.Get("access_key").MustString(),
 		SecretKey:       model.Settings.Get("secret_key").MustString(),
-		MessageTemplate: model.Settings.Get("message_template").MustString(),
+		MessageTemplate: messageTemplate,
+		RunbookUrl:      runbookUrl,
 		log:             log.New("alerting.notifier.aws_sns"),
 	}, nil
 }
@@ -80,16 +96,19 @@ type AwsSnsNotifier struct {
 	AccessKey       string
 	SecretKey       string
 	MessageTemplate string
+	RunbookUrl      string
 	log             log.Logger
 }
 
-func getMessageBody(messageTemplate string, evalContext *alerting.EvalContext) ([]byte, error) {
+func getMessageBody(messageTemplate string, runbookUrl string, evalContext *alerting.EvalContext) ([]byte, error) {
 	bodyJSON := simplejson.New()
+
+	alarmDescription := fmt.Sprintf("severity=%s,runbookurl=%s", "debug", runbookUrl)
 
 	switch messageTemplate {
 	case "247ops":
 		bodyJSON.Set("AlarmName", evalContext.GetNotificationTitle())
-		bodyJSON.Set("AlarmDescription", "severity=debug,runbookurl=https://confluence.dev.bbc.co.uk/display/IBL/iPlayer+Business+Layer+Runbook")
+		bodyJSON.Set("AlarmDescription", alarmDescription)
 		bodyJSON.Set("StateChangeTime", evalContext.StartTime)
 		bodyJSON.Set("state", evalContext.Rule.State)
 		ruleUrl, err := evalContext.GetRuleUrl()
@@ -128,7 +147,7 @@ func getMessageBody(messageTemplate string, evalContext *alerting.EvalContext) (
 func (this *AwsSnsNotifier) Notify(evalContext *alerting.EvalContext) error {
 	this.log.Info("Sending AWS SNS message")
 
-	body, _ := getMessageBody(this.MessageTemplate, evalContext)
+	body, _ := getMessageBody(this.MessageTemplate, this.RunbookUrl, evalContext)
 
 	sess, err := session.NewSession()
 	if err != nil {
