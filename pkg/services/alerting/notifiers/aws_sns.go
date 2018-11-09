@@ -44,7 +44,7 @@ func init() {
         <span class="gf-form-label width-10">Message Template</span>
 				<select required class="gf-form-input max-width-26" ng-model="ctrl.model.settings.message_template" ng-options="v as k for (k, v) in {
           'Default': 'default',
-					'24/7 Ops (Zenoss)': '247ops',
+					'OTG Monitoring (Zenoss)': '247ops',
 					'Plaintext (SMS)': 'plaintext'
         }" ng-init="ctrl.model.settings.message_template=ctrl.model.settings.message_template||'default'">
 				</select>
@@ -52,7 +52,23 @@ func init() {
       <div class="gf-form" ng-show="ctrl.model.settings.message_template == '247ops'">
         <span class="gf-form-label width-10">Runbook URL</span>
         <input type="text" ng-required="ctrl.model.settings.message_template == '247ops'" class="gf-form-input max-width-26" ng-model="ctrl.model.settings.runbook_url"></input>
+      </div>
+      <div class="gf-form" ng-show="ctrl.model.settings.message_template == '247ops'">
+        <span class="gf-form-label width-10">Component</span>
+        <input type="text" ng-required="ctrl.model.settings.message_template == '247ops'" class="gf-form-input max-width-26" ng-model="ctrl.model.settings.component"></input>
 			</div>
+			<div class="gf-form" ng-show="ctrl.model.settings.message_template == '247ops'">
+        <span class="gf-form-label width-10">Severity</span>
+				<select required class="gf-form-input max-width-26" ng-model="ctrl.model.settings.severity" ng-options="v as k for (k, v) in {
+          'Critical (alerts 24/7)': 'critical',
+					'Error': 'error',
+					'Warning': 'warning',
+					'Info': 'info',
+					'Debug': 'debug',
+					'Clear': 'clear'
+        }" ng-init="ctrl.model.settings.severity=ctrl.model.settings.severity||'info'">
+				</select>
+      </div>
     `,
 	})
 }
@@ -78,6 +94,16 @@ func NewAwsSnsNotifier(model *m.AlertNotification) (alerting.Notifier, error) {
 		return nil, alerting.ValidationError{Reason: "Runbook is required for Ops"}
 	}
 
+	component := model.Settings.Get("component").MustString()
+	if messageTemplate == "ops247" && component == "" {
+		return nil, alerting.ValidationError{Reason: "Component is required for Ops"}
+	}
+
+	severity := model.Settings.Get("severity").MustString()
+	if messageTemplate == "ops247" && severity == "" {
+		return nil, alerting.ValidationError{Reason: "Severity is required for Ops"}
+	}
+
 	return &AwsSnsNotifier{
 		NotifierBase:    NewNotifierBase(model),
 		Region:          region,
@@ -85,7 +111,9 @@ func NewAwsSnsNotifier(model *m.AlertNotification) (alerting.Notifier, error) {
 		AccessKey:       model.Settings.Get("access_key").MustString(),
 		SecretKey:       model.Settings.Get("secret_key").MustString(),
 		MessageTemplate: messageTemplate,
-		RunbookUrl:      runbookUrl,
+		RunbookURL:      runbookUrl,
+		Component:       component,
+		Severity:        severity,
 		log:             log.New("alerting.notifier.aws_sns"),
 	}, nil
 }
@@ -97,16 +125,17 @@ type AwsSnsNotifier struct {
 	AccessKey       string
 	SecretKey       string
 	MessageTemplate string
-	RunbookUrl      string
+	RunbookURL      string
+	Component       string
+	Severity        string
 	log             log.Logger
 }
 
-func getMessageBody(messageTemplate string, runbookUrl string, evalContext *alerting.EvalContext) ([]byte, error) {
+func (this *AwsSnsNotifier) getMessageBody(evalContext *alerting.EvalContext) ([]byte, error) {
 	bodyJSON := simplejson.New()
 
-	alarmDescription := fmt.Sprintf("severity=%s,runbookurl=%s", "debug", runbookUrl)
 	ruleUrl, ruleUrlErr := evalContext.GetRuleUrl()
-	switch messageTemplate {
+	switch this.MessageTemplate {
 	case "plaintext":
 		alarm := fmt.Sprintf(
 			"Grafana Alert: %s\nTime: %s\nState: %s\nMessage: %s\nAlert URL: %s\nImage: %s",
@@ -119,16 +148,16 @@ func getMessageBody(messageTemplate string, runbookUrl string, evalContext *aler
 		)
 		return []byte(alarm), nil
 	case "247ops":
-		bodyJSON.Set("AlarmName", evalContext.GetNotificationTitle())
-		bodyJSON.Set("AlarmDescription", alarmDescription)
-		bodyJSON.Set("StateChangeTime", evalContext.StartTime)
-		bodyJSON.Set("state", evalContext.Rule.State)
-		if ruleUrlErr == nil {
-			bodyJSON.Set("ruleUrl", ruleUrl)
-		}
-		if evalContext.Rule.Message != "" {
-			bodyJSON.Set("message", evalContext.Rule.Message)
-		}
+		monitoringJSON := simplejson.New()
+		monitoringJSON.Set("runbookurl", this.RunbookURL)
+		monitoringJSON.Set("severity", this.Severity)
+		monitoringJSON.Set("component", this.Component)
+		monitoringJSON.Set("summary", evalContext.GetNotificationTitle())
+		monitoringJSON.Set("message", evalContext.Rule.Message)
+		monitoringJSON.Set("startTime", evalContext.StartTime)
+		monitoringJSON.Set("alertUrl", ruleUrl)
+		bodyJSON.Set("BBCMonitoring", monitoringJSON)
+
 	case "default":
 		bodyJSON.Set("title", evalContext.GetNotificationTitle())
 		bodyJSON.Set("ruleId", evalContext.Rule.Id)
@@ -136,8 +165,7 @@ func getMessageBody(messageTemplate string, runbookUrl string, evalContext *aler
 		bodyJSON.Set("state", evalContext.Rule.State)
 		bodyJSON.Set("evalMatches", simplejson.NewFromAny(evalContext.EvalMatches))
 
-		ruleUrl, err := evalContext.GetRuleUrl()
-		if err == nil {
+		if ruleUrlErr == nil {
 			bodyJSON.Set("ruleUrl", ruleUrl)
 		}
 
@@ -158,7 +186,7 @@ func getMessageBody(messageTemplate string, runbookUrl string, evalContext *aler
 func (this *AwsSnsNotifier) Notify(evalContext *alerting.EvalContext) error {
 	this.log.Info("Sending AWS SNS message")
 
-	body, _ := getMessageBody(this.MessageTemplate, this.RunbookUrl, evalContext)
+	body, _ := this.getMessageBody(evalContext)
 
 	sess, err := session.NewSession()
 	if err != nil {
@@ -178,9 +206,14 @@ func (this *AwsSnsNotifier) Notify(evalContext *alerting.EvalContext) error {
 		Credentials: creds,
 	}
 
+	notificationSubject := evalContext.GetNotificationTitle()
+	if this.MessageTemplate == "247ops" {
+		notificationSubject = "BBCMonitoring"
+	}
+
 	svc := sns.New(sess, cfg)
 	params := &sns.PublishInput{
-		Subject:  aws.String(evalContext.GetNotificationTitle()),
+		Subject:  aws.String(notificationSubject),
 		Message:  aws.String(string(body)),
 		TopicArn: aws.String(this.TopicArn),
 	}
