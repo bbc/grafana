@@ -25,7 +25,7 @@ func init() {
       <h3 class="page-heading">AWS SNS settings</h3>
       <div class="gf-form">
         <span class="gf-form-label width-10">Region</span>
-        <input type="text" required class="gf-form-input max-width-14" ng-model="ctrl.model.settings.region" placeholder="eu-west-1"></input>
+        <input type="text" required class="gf-form-input max-width-14" ng-model="ctrl.model.settings.region" ng-init="ctrl.model.settings.region = 'eu-west-1'" placeholder="eu-west-1"></input>
       </div>
       <div class="gf-form">
         <span class="gf-form-label width-10">Topic Arn</span>
@@ -83,34 +83,23 @@ type AwsSnsNotifier struct {
 	log             log.Logger
 }
 
-func (this *AwsSnsNotifier) Notify(evalContext *alerting.EvalContext) error {
-	this.log.Info("Sending AWS SNS message")
-
+func getMessageBody(messageTemplate string, evalContext *alerting.EvalContext) ([]byte, error) {
 	bodyJSON := simplejson.New()
 
-	if this.MessageTemplate == "247ops" {
+	switch messageTemplate {
+	case "247ops":
 		bodyJSON.Set("AlarmName", evalContext.GetNotificationTitle())
 		bodyJSON.Set("AlarmDescription", "severity=debug,runbookurl=https://confluence.dev.bbc.co.uk/display/IBL/iPlayer+Business+Layer+Runbook")
 		bodyJSON.Set("StateChangeTime", evalContext.StartTime)
-		bodyJSON.Set("ruleId", evalContext.Rule.Id)
-		bodyJSON.Set("ruleName", evalContext.Rule.Name)
 		bodyJSON.Set("state", evalContext.Rule.State)
-		bodyJSON.Set("evalMatches", simplejson.NewFromAny(evalContext.EvalMatches))
-
 		ruleUrl, err := evalContext.GetRuleUrl()
 		if err == nil {
 			bodyJSON.Set("ruleUrl", ruleUrl)
 		}
-
-		if evalContext.ImagePublicUrl != "" {
-			bodyJSON.Set("imageUrl", evalContext.ImagePublicUrl)
-		}
-
 		if evalContext.Rule.Message != "" {
 			bodyJSON.Set("message", evalContext.Rule.Message)
 		}
-		bodyJSON.Set("default", "")
-	} else {
+	case "default":
 		bodyJSON.Set("title", evalContext.GetNotificationTitle())
 		bodyJSON.Set("ruleId", evalContext.Rule.Id)
 		bodyJSON.Set("ruleName", evalContext.Rule.Name)
@@ -133,6 +122,13 @@ func (this *AwsSnsNotifier) Notify(evalContext *alerting.EvalContext) error {
 	}
 
 	body, _ := bodyJSON.MarshalJSON()
+	return body, nil
+}
+
+func (this *AwsSnsNotifier) Notify(evalContext *alerting.EvalContext) error {
+	this.log.Info("Sending AWS SNS message")
+
+	body, _ := getMessageBody(this.MessageTemplate, evalContext)
 
 	sess, err := session.NewSession()
 	if err != nil {
