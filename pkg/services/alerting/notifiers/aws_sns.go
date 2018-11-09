@@ -44,7 +44,8 @@ func init() {
         <span class="gf-form-label width-10">Message Template</span>
 				<select required class="gf-form-input max-width-26" ng-model="ctrl.model.settings.message_template" ng-options="v as k for (k, v) in {
           'Default': 'default',
-          '24/7 Ops': '247ops',
+					'24/7 Ops (Zenoss)': '247ops',
+					'Plaintext (SMS)': 'plaintext'
         }" ng-init="ctrl.model.settings.message_template=ctrl.model.settings.message_template||'default'">
 				</select>
       </div>
@@ -106,6 +107,16 @@ func getMessageBody(messageTemplate string, runbookUrl string, evalContext *aler
 	alarmDescription := fmt.Sprintf("severity=%s,runbookurl=%s", "debug", runbookUrl)
 
 	switch messageTemplate {
+	case "plaintext":
+		alarm := fmt.Sprintf(
+			"Grafana Alert: %s\nTime: %s\nState: %s\nMessage: %s\nImage: %s",
+			evalContext.GetNotificationTitle(),
+			evalContext.StartTime,
+			evalContext.Rule.State,
+			evalContext.Rule.Message,
+			evalContext.ImagePublicUrl,
+		)
+		return []byte(alarm), nil
 	case "247ops":
 		bodyJSON.Set("AlarmName", evalContext.GetNotificationTitle())
 		bodyJSON.Set("AlarmDescription", alarmDescription)
