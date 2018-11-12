@@ -86,7 +86,7 @@ func NewAwsSnsNotifier(model *m.AlertNotification) (alerting.Notifier, error) {
 
 	messageTemplate := model.Settings.Get("message_template").MustString()
 	if messageTemplate == "" {
-		return nil, alerting.ValidationError{Reason: "Could not find Message Templase property in settings"}
+		return nil, alerting.ValidationError{Reason: "Could not find Message Template property in settings"}
 	}
 
 	runbookUrl := model.Settings.Get("runbook_url").MustString()
