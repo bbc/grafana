@@ -150,7 +150,13 @@ func (this *AwsSnsNotifier) getMessageBody(evalContext *alerting.EvalContext) ([
 	case "247ops":
 		monitoringJSON := simplejson.New()
 		monitoringJSON.Set("runbookurl", this.RunbookURL)
-		monitoringJSON.Set("severity", this.Severity)
+
+		if evalContext.Rule.State != m.AlertStateAlerting {
+			monitoringJSON.Set("severity", "clear")
+		} else {
+			monitoringJSON.Set("severity", this.Severity)
+		}
+
 		monitoringJSON.Set("component", this.Component)
 		monitoringJSON.Set("summary", evalContext.GetNotificationTitle())
 		monitoringJSON.Set("message", evalContext.Rule.Message)
